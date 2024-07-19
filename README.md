@@ -29,15 +29,19 @@ pub mod Voting {
     use voting::base::types::Candidate;
     use voting::interfaces::IVoting::IVoting;
 
-    // bring component into context for use within module
+    // bring component into module context
     use voting::registry::registry::RegistryComponent;
+    use voting::registry::registry::RegistryComponent::InternalTrait;
 
-    // embed component
-    component!(path: RegistryComponent, storage: registry, event: RegisterEvent);
+    // declare component
+    component!(path: RegistryComponent, storage: registry, event: RegistryEvent);
 
-    // implement component
+    // implement component external functions
     #[abi(embed_v0)]
     impl RegistryImpl = RegistryComponent::Registry<ContractState>;
+
+    // implement component internal functions
+    impl RegistryInternalImpl = RegistryComponent::InternalImpl<ContractState>;
 
     #[storage]
     struct Storage {
@@ -46,14 +50,14 @@ pub mod Voting {
         candidate_votes: LegacyMap<u256, u64>,
         // define component storage
         #[substorage(v0)]
-        registry: RegistryComponent::Storage,
+        registry: RegistryComponent::Storage
     }
 
     #[event]
     #[derive(Drop, starknet::Event)]
     enum Event {
         // define component event
-        RegisterEvent: RegistryComponent::Event
+        RegistryEvent: RegistryComponent::Event
     }
 
     #[constructor]
@@ -76,8 +80,8 @@ pub mod Voting {
         }
 
         fn vote(ref self: ContractState, candidate_id: u256) {
-            let candidate = self.registry.get_candidate(candidate_id);
-            assert(candidate.is_registered, 'Candidate not registered');
+            let is_registered = self.registry._is_registered(candidate_id);
+            assert(is_registered, 'Candidate not registered');
 
             let candidate_votes = self.candidate_votes.read(candidate_id);
             self.candidate_votes.write(candidate_id, candidate_votes + 1);
@@ -87,6 +91,7 @@ pub mod Voting {
         }
     }
 }
+
 ```
 
 ## Registry Component
@@ -100,7 +105,7 @@ pub mod RegistryComponent {
     #[storage]
     struct Storage {
         candidates: LegacyMap<u256, Candidate>,
-        last_registered_candidate_id: u256
+        last_registered_candidate_id: u256,
     }
 
     #[event]
@@ -111,56 +116,48 @@ pub mod RegistryComponent {
 
     #[derive(Drop, starknet::Event)]
     pub struct CandidateRegistered {
-        pub candidate: Candidate,
-        pub candidate_id: u256
+        candidate: Candidate,
+        candidate_id: u256
     }
 
-    // functions define in this implementation block can be accessed externally
     #[embeddable_as(Registry)]
     impl RegistryImpl<
         TContractState, +HasComponent<TContractState>
     > of IRegistry<ComponentState<TContractState>> {
         fn get_candidate(self: @ComponentState<TContractState>, candidate_id: u256) -> Candidate {
-            self._get_candidate(candidate_id)
+            self.candidates.read(candidate_id)
         }
 
         fn register_candidate(
             ref self: ComponentState<TContractState>, fullname: felt252, party: felt252
-        ) -> u256 {
+        ) {
             let candidate = Candidate { fullname, party, is_registered: true };
-            let last_registered_candidate_id: u256 = self.last_registered_candidate_id.read();
-            let candidate_id: u256 = last_registered_candidate_id + 1;
+            let last_registered_candidate_id = self.last_registered_candidate_id.read();
+            let candidate_id = last_registered_candidate_id + 1;
 
             self.candidates.write(candidate_id, candidate.clone());
             self.last_registered_candidate_id.write(candidate_id);
 
-            self.emit(CandidateRegistered { candidate: candidate, candidate_id, });
-
-            candidate_id
+            self.emit(CandidateRegistered { candidate, candidate_id });
         }
 
         fn delete_candidate(ref self: ComponentState<TContractState>, candidate_id: u256) {
-            let candidate = self._get_candidate(candidate_id);
-            assert(candidate.is_registered, 'Candidate not registered');
+            assert(self._is_registered(candidate_id), 'Candidate not registered');
 
             let candidate = Candidate { fullname: '', party: '', is_registered: false };
 
-            self.candidates.write(candidate_id, candidate);
+            self.candidates.write(candidate_id, candidate)
         }
     }
 
-    // functions define in this implementation can only be accessed internally
     #[generate_trait]
-    impl InternalImpl<
+    pub impl InternalImpl<
         TContractState, +HasComponent<TContractState>
     > of InternalTrait<TContractState> {
-        fn _get_candidate(self: @ComponentState<TContractState>, candidate_id: u256) -> Candidate {
-            self.candidates.read(candidate_id)
-        }
-
         fn _is_registered(self: @ComponentState<TContractState>, candidate_id: u256) -> bool {
-            let candidate = self._get_candidate(candidate_id);
-            candidate.is_registered
+            let candidate: Candidate = self.candidates.read(candidate_id);
+            let is_registered: bool = candidate.is_registered;
+            is_registered
         }
     }
 }
