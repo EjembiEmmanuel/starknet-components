@@ -1,6 +1,5 @@
 #[starknet::component]
 pub mod RegistryComponent {
-    use core::traits::Destruct;
     use voting::base::types::Candidate;
     use voting::interfaces::IRegistry::IRegistry;
 

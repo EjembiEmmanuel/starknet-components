@@ -1,5 +1,3 @@
-// 0x264fdcd64e34a0b4a00ecee95ea616c545ec4dc5a7c493b43f4a4551bd23620
-
 #[starknet::contract]
 pub mod Voting {
     use voting::interfaces::IRegistry::IRegistry;
